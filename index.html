@@ -8,8 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.1.16/Recharts.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#0f172a;color:#f1f5f9;font-family:system-ui,sans-serif;min-height:100vh}
@@ -20,7 +19,55 @@
 <div id="root"></div>
 <script>
 const {useState,useEffect,useRef,useCallback} = React;
-const {ComposedChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ReferenceLine,ResponsiveContainer} = Recharts;
+
+function WaterChart({chartData, today}) {
+  const canvasRef = useRef(null);
+  const chartRef  = useRef(null);
+
+  useEffect(()=>{
+    if (!canvasRef.current || !chartData.length) return;
+    if (chartRef.current) chartRef.current.destroy();
+    const labels   = chartData.map(d=>d.label);
+    const todayIdx = chartData.findIndex(d=>d.date===today);
+    chartRef.current = new Chart(canvasRef.current, {
+      type:"line",
+      data:{
+        labels,
+        datasets:[
+          {label:"Rajasaari 24-25",data:chartData.map(d=>d.rajAvg??null),borderColor:"#06b6d4",borderWidth:1.5,borderDash:[6,3],pointRadius:0,spanGaps:true,tension:0.3},
+          {label:"Normaali 1991-2020",data:chartData.map(d=>d.climNorm??null),borderColor:"#a78bfa",borderWidth:1.5,borderDash:[4,2],pointRadius:0,spanGaps:true,tension:0.3},
+          {label:"Mitattu",data:chartData.map(d=>d.obs??null),borderColor:"#3b82f6",borderWidth:2.5,pointRadius:3,pointBackgroundColor:"#3b82f6",spanGaps:false,tension:0.3},
+          {label:"Ennuste",data:chartData.map(d=>d.forecast??null),borderColor:"#f97316",borderWidth:2,borderDash:[5,4],pointRadius:0,spanGaps:true,tension:0.3},
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false, animation:false,
+        interaction:{mode:"index",intersect:false},
+        plugins:{
+          legend:{labels:{color:"#94a3b8",font:{size:11}}},
+          tooltip:{backgroundColor:"#1e293b",titleColor:"#94a3b8",bodyColor:"#f1f5f9",borderColor:"#334155",borderWidth:1},
+          annotation:{annotations:{
+            today:{type:"line",xMin:todayIdx,xMax:todayIdx,borderColor:"#facc15",borderWidth:1,borderDash:[4,2],label:{content:"tänään",enabled:true,color:"#facc15",font:{size:9}}},
+            swim:{type:"line",yMin:15,yMax:15,borderColor:"#22c55e",borderWidth:1,borderDash:[3,3],borderOpacity:0.5,label:{content:"uimaraja",enabled:true,color:"#22c55e",font:{size:9},position:"end"}},
+          }}
+        },
+        scales:{
+          x:{ticks:{color:"#64748b",font:{size:10},maxTicksLimit:12},grid:{color:"#1e293b"}},
+          y:{ticks:{color:"#64748b",font:{size:11},callback:v=>v+"°"},grid:{color:"#1e293b"},min:0}
+        }
+      }
+    });
+    return ()=>{ if(chartRef.current){chartRef.current.destroy();chartRef.current=null;} };
+  },[chartData, today]);
+
+  return h("div",{style:{background:"#0f172a",borderRadius:12,padding:"16px 8px 8px",marginBottom:12}},
+    h("p",{style:{color:"#94a3b8",fontSize:12,fontWeight:600,margin:"0 0 2px 8px"}},"Viimeiset 10 pv + 61 vrk ennuste"),
+    h("p",{style:{color:"#475569",fontSize:10,margin:"0 0 10px 8px"}},"🔵 Mitattu · 🟠 Ennuste · 🩵 Rajasaari 2024-25 · 🟣 Normaali 1991-2020"),
+    h("div",{style:{position:"relative",height:280}},
+      h("canvas",{ref:canvasRef})
+    )
+  );
+}
 
 const PROXY = "https://purple-waterfall-49fa.lauri-alaviitala-5f6.workers.dev";
 
@@ -392,24 +439,7 @@ function App(){
             ))
           ),
 
-          h("div",{style:{background:"#0f172a",borderRadius:12,padding:"16px 8px 8px",marginBottom:12}},
-            h("p",{style:{color:"#94a3b8",fontSize:12,fontWeight:600,margin:"0 0 2px 8px"}},"Viimeiset 10 pv + 61 vrk ennuste"),
-            h("p",{style:{color:"#475569",fontSize:10,margin:"0 0 10px 8px"}},"🔵 Mitattu · 🟠 Ennuste · 🩵 Rajasaari 2024-25 · 🟣 Normaali 1991-2020"),
-            h(ResponsiveContainer,{width:"100%",height:280},
-              h(ComposedChart,{data:chartData,margin:{top:5,right:16,left:0,bottom:5}},
-                h(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1e293b"}),
-                h(XAxis,{dataKey:"label",tick:{fill:"#64748b",fontSize:10},interval:Math.max(1,Math.floor(chartData.length/12))}),
-                h(YAxis,{tick:{fill:"#64748b",fontSize:11},tickFormatter:v=>v+"°",domain:[0,"auto"]}),
-                h(Tooltip,{content:h(TT,null)}),
-                h(ReferenceLine,{x:today.slice(5),stroke:"#facc15",strokeDasharray:"4 2",label:{value:"tänään",fill:"#facc15",fontSize:9,position:"insideTopLeft"}}),
-                h(ReferenceLine,{y:15,stroke:"#22c55e",strokeDasharray:"3 3",strokeOpacity:0.5,label:{value:"uimaraja",fill:"#22c55e",fontSize:9,position:"insideTopRight"}}),
-                h(Line,{dataKey:"rajAvg",stroke:"#06b6d4",strokeWidth:1.5,strokeDasharray:"4 2",dot:false,name:"Rajasaari 24-25",connectNulls:true}),
-                h(Line,{dataKey:"climNorm",stroke:"#a78bfa",strokeWidth:1.5,strokeDasharray:"4 2",dot:false,name:"Normaali 1991-2020",connectNulls:true}),
-                h(Line,{dataKey:"obs",stroke:"#3b82f6",strokeWidth:2.5,dot:{r:3,fill:"#3b82f6"},name:"Mitattu",connectNulls:true}),
-                h(Line,{dataKey:"forecast",stroke:"#f97316",strokeWidth:2,dot:false,name:"Ennuste",strokeDasharray:"5 4",connectNulls:true})
-              )
-            )
-          ),
+          h(WaterChart,{chartData,today}),
 
           forecastStrip.length>0&&h("div",{style:{overflowX:"auto"}},
             h("p",{style:{color:"#64748b",fontSize:10,margin:"0 0 6px"}},"Sääkaistale 14 pv — ilma = vrk keskiarvo"),
