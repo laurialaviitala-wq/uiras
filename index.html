@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Uiras Helsinki</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0f172a;color:#f1f5f9;font-family:system-ui,sans-serif;min-height:100vh}
+    textarea{resize:vertical}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect,useRef,useCallback} = React;
+const {ComposedChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ReferenceLine,ResponsiveContainer} = Recharts;
+
+const PROXY = "https://purple-waterfall-49fa.lauri-alaviitala-5f6.workers.dev";
+
+const SITES = [
+  {id:"70B3D570500114C7", name:"Hietaniemi",                lat:60.1715, lon:24.8983},
+  {id:"70B3D57050001AB9", name:"Pikkukosken uimaranta",     lat:60.2277, lon:24.9838},
+  {id:"70B3D57050001BBE", name:"Rastilan uimaranta",        lat:60.2080, lon:25.1148},
+  {id:"70B3D5705000DFED", name:"Katajanokan mattolaituri",  lat:60.1693, lon:24.9760},
+  {id:"70B3D5705000E3C0", name:"Rajasaari",                 lat:60.1807, lon:24.9086},
+  {id:"70B3D5705001140F", name:"Pihlajasaari",              lat:60.1406, lon:24.9163},
+  {id:"70B3D5705000E070", name:"Matosaari itä",             lat:60.1569, lon:25.0829},
+  {id:"70B3D5705000E3B2", name:"Reposalmi VK",              lat:60.1805, lon:25.0653},
+  {id:"70B3D57050011439", name:"Marjaniemen uimaranta",     lat:60.1984, lon:25.0764},
+  {id:"70B3D57050001BA6", name:"Vetokannas",                lat:60.2703, lon:24.8806},
+  {id:"70B3D57050001ADA", name:"Kuusijärvi",                lat:60.3133, lon:25.1140},
+  {id:"70B3D5705000516A", name:"Kattilajärvi",              lat:60.2990, lon:24.6198},
+  {id:"70B3D57050011458", name:"Sörnäisten mattolaituri",   lat:60.1816, lon:24.9628},
+  {id:"70B3D57050004CDB", name:"Lauttasaaren mattolaituri", lat:60.1707, lon:24.8579},
+  {id:"70B3D57050001A97", name:"Kalasatama",                lat:60.1807, lon:24.9800},
+];
+
+const CLIMATE_NORMALS = {
+  "01-01":2.8,"01-15":2.3,"01-31":1.8,"02-01":1.7,"02-15":1.4,"02-28":1.3,
+  "03-01":1.3,"03-15":1.2,"03-31":1.5,"04-01":1.6,"04-15":2.8,"04-30":5.1,
+  "05-01":5.3,"05-15":8.3,"05-31":11.8,"06-01":12.1,"06-15":14.8,"06-30":17.2,
+  "07-01":17.5,"07-15":19.2,"07-31":20.3,"08-01":20.1,"08-15":19.8,"08-31":18.4,
+  "09-01":18.2,"09-15":16.5,"09-30":14.2,"10-01":13.9,"10-15":11.8,"10-31":9.4,
+  "11-01":9.1,"11-15":7.2,"11-30":5.3,"12-01":5.0,"12-15":3.8,"12-31":3.1,
+};
+
+function getClimateNormal(dateStr) {
+  const mmdd = dateStr.slice(5);
+  const keys = Object.keys(CLIMATE_NORMALS).sort();
+  let prev = keys[0], next = keys[keys.length-1];
+  for (const k of keys) { if (k <= mmdd) prev = k; }
+  for (const k of keys) { if (k >= mmdd) { next = k; break; } }
+  if (prev === next) return CLIMATE_NORMALS[prev];
+  const d1=new Date("2000-"+prev),d2=new Date("2000-"+next),d=new Date("2000-"+mmdd);
+  return CLIMATE_NORMALS[prev]+((d-d1)/(d2-d1))*(CLIMATE_NORMALS[next]-CLIMATE_NORMALS[prev]);
+}
+
+const RAJASAARI_D1 = [{"t":"2024-04-09","w":2.96},{"t":"2024-04-16","w":5.01},{"t":"2024-04-28","w":6.3},{"t":"2024-04-30","w":8.78},{"t":"2024-05-04","w":12.64},{"t":"2024-05-16","w":15.06},{"t":"2024-05-17","w":16.49},{"t":"2024-05-25","w":18.75},{"t":"2024-05-28","w":21.0},{"t":"2024-06-05","w":23.2},{"t":"2024-06-15","w":19.26},{"t":"2024-06-27","w":21.37},{"t":"2024-07-27","w":23.7},{"t":"2024-08-09","w":22.71},{"t":"2024-08-30","w":20.29},{"t":"2024-09-05","w":19.65},{"t":"2024-09-22","w":16.42},{"t":"2024-09-30","w":14.28},{"t":"2024-10-31","w":7.96},{"t":"2024-11-22","w":3.54},{"t":"2024-12-31","w":1.72},{"t":"2025-01-03","w":0.85},{"t":"2025-02-14","w":0.49},{"t":"2025-02-28","w":0.99},{"t":"2025-03-10","w":2.2},{"t":"2025-03-25","w":3.35},{"t":"2025-03-31","w":5.58},{"t":"2025-04-01","w":5.94},{"t":"2025-04-02","w":6.45},{"t":"2025-04-03","w":7.28},{"t":"2025-04-04","w":6.75},{"t":"2025-04-05","w":5.9},{"t":"2025-04-06","w":5.32},{"t":"2025-04-07","w":5.51},{"t":"2025-04-08","w":5.53},{"t":"2025-04-09","w":5.43},{"t":"2025-04-15","w":7.56},{"t":"2025-04-19","w":9.58},{"t":"2025-04-29","w":8.88},{"t":"2025-05-03","w":9.4},{"t":"2025-05-13","w":11.17},{"t":"2025-05-20","w":12.94},{"t":"2025-05-27","w":15.06},{"t":"2025-05-30","w":16.8},{"t":"2025-06-08","w":17.47},{"t":"2025-06-17","w":17.82},{"t":"2025-06-20","w":13.16},{"t":"2025-07-02","w":17.75},{"t":"2025-07-15","w":22.73},{"t":"2025-07-27","w":26.52},{"t":"2025-08-04","w":25.0},{"t":"2025-08-20","w":15.39},{"t":"2025-09-11","w":18.17},{"t":"2025-09-23","w":15.15},{"t":"2025-09-30","w":11.32},{"t":"2025-10-31","w":8.28},{"t":"2025-11-30","w":5.01},{"t":"2025-12-31","w":0.86},{"t":"2026-01-01","w":0.66},{"t":"2026-03-31","w":3.96},{"t":"2026-04-01","w":4.01},{"t":"2026-04-02","w":3.86},{"t":"2026-04-03","w":4.14},{"t":"2026-04-04","w":4.22},{"t":"2026-04-05","w":4.22},{"t":"2026-04-06","w":4.23},{"t":"2026-04-07","w":3.61},{"t":"2026-04-08","w":3.33},{"t":"2026-04-09","w":3.62}];
+
+const RAJASAARI_SEASON = (() => {
+  const m={};
+  RAJASAARI_D1.forEach(d=>{const k=d.t.slice(5);if(!m[k])m[k]=[];m[k].push(d.w);});
+  return m;
+})();
+
+function parseGeoJSON(json) {
+  try {
+    const props = json.type==="Feature" ? json.properties : json.features?.[0]?.properties;
+    if (!props) return null;
+    const clean = arr=>(arr||[]).filter(d=>d.temp_water!=null&&d.temp_water>-10&&d.temp_water<40).map(d=>({t:d.time.slice(0,10),w:d.temp_water}));
+    const merged={};
+    [...clean(props.data?.raw),...clean(props.data?.h3),...clean(props.data?.d1)].forEach(d=>{merged[d.t]=d;});
+    const obs=Object.values(merged).sort((a,b)=>a.t.localeCompare(b.t));
+    const latestRaw=clean(props.data?.raw).slice(-1)[0];
+    const latestTemp=latestRaw?.w??props.measurement?.temp_water??null;
+    const latestTime=(latestRaw?.t??(props.measurement?.time||"").slice(0,10))||null;
+    return {obs,latestTemp,latestTime};
+  } catch(e){return null;}
+}
+
+function parseWeatherJSON(j) {
+  try {
+    const d=j.daily;
+    return d.time.map((date,i)=>({
+      date,
+      air:(d.temperature_2m_max[i]+d.temperature_2m_min[i])/2,
+      wind:d.windspeed_10m_max[i]/3.6,
+      windDir:d.winddirection_10m_dominant[i],
+      sunshine:d.sunshine_duration[i]/3600,
+      radiation:d.shortwave_radiation_sum[i],
+    }));
+  } catch(e){return null;}
+}
+
+function windDirLabel(deg) {
+  if(deg==null)return"–";
+  return ["P","KP","K","KE","E","LE","L","LP"][Math.round(deg/45)%8];
+}
+
+function buildSeason(obs){
+  const m={};
+  obs.forEach(d=>{const k=d.t.slice(5);if(!m[k])m[k]=[];m[k].push(d.w);});
+  return m;
+}
+
+function windEffect(dir,speed){
+  if(dir==null||speed==null)return 0;
+  const diff=Math.abs(((dir-90+180)%360)-180);
+  return Math.cos((diff*Math.PI)/180)*(Math.min(speed,15)/7.5)*0.2;
+}
+function radiationEffect(radMJ,month){
+  if(radMJ==null)return 0;
+  return(radMJ/20)*0.3*(month>=5&&month<=8?1:0.5);
+}
+function airEffect(air,waterTemp){
+  if(air==null)return 0;
+  return(air-(waterTemp||5))*0.08;
+}
+
+function buildForecast(obs,weather,today){
+  const recent=obs.filter(d=>d.t<=today).slice(-5);
+  if(!recent.length)return[];
+  const lastVal=recent[recent.length-1].w, lastDate=recent[recent.length-1].t;
+  const last10=obs.filter(d=>d.t<=today).slice(-10);
+  const n=last10.length;
+  let slope=0;
+  if(n>=2){
+    const xs=last10.map((_,i)=>i),ys=last10.map(d=>d.w);
+    const xM=xs.reduce((a,b)=>a+b,0)/n,yM=ys.reduce((a,b)=>a+b,0)/n;
+    const denom=xs.reduce((s,x)=>s+(x-xM)**2,0);
+    if(denom)slope=xs.reduce((s,x,i)=>s+(x-xM)*(ys[i]-yM),0)/denom;
+  }
+  slope=Math.max(-0.3,Math.min(0.3,slope));
+  const byDoy=buildSeason(obs);
+  const result=[];
+  for(let i=1;i<=61;i++){
+    const d=new Date(lastDate+"T12:00:00Z");
+    d.setDate(d.getDate()+i);
+    const dateStr=d.toISOString().slice(0,10),key=dateStr.slice(5),month=d.getUTCMonth()+1;
+    const hist=byDoy[key]||[],histAvg=hist.length?hist.reduce((a,b)=>a+b,0)/hist.length:null;
+    const rajHist=RAJASAARI_SEASON[key]||[],rajAvg=rajHist.length?rajHist.reduce((a,b)=>a+b,0)/rajHist.length:null;
+    const climNorm=getClimateNormal(dateStr);
+    const seasonExp=histAvg!=null&&rajAvg!=null?histAvg*0.2+rajAvg*0.5+climNorm*0.3
+                   :rajAvg!=null?rajAvg*0.6+climNorm*0.4
+                   :histAvg!=null?histAvg*0.5+climNorm*0.5:climNorm;
+    const wx=(weather||[]).find(w=>w.date===dateStr);
+    const wxW=Math.max(0,1-(i-1)/16);
+    const wEff=windEffect(wx?.windDir,wx?.wind)*wxW;
+    const rEff=radiationEffect(wx?.radiation,month)*wxW;
+    const aEff=airEffect(wx?.air,seasonExp)*wxW;
+    const tW=Math.max(0,0.6-i*0.045);
+    const base=(lastVal+slope*i)*tW+seasonExp*(1-tW);
+    const forecast=Math.round(Math.max(0,base+wEff+rEff+aEff)*10)/10;
+    result.push({date:dateStr,label:key,forecast,climNorm:Math.round(climNorm*10)/10,rajAvg:rajAvg?Math.round(rajAvg*10)/10:null,airTemp:wx?.air??null,sunshine:wx?.sunshine!=null?Math.round(wx.sunshine*10)/10:null,windDir:wx?.windDir??null,wind:wx?.wind??null,windEff:Math.round(wEff*100)/100});
+  }
+  return result;
+}
+
+function fetchSiteData(id){
+  return fetch(PROXY+"/uiras/"+id).then(r=>r.json()).then(json=>{
+    const p=parseGeoJSON(json);
+    return(p&&(p.obs?.length||p.latestTemp!=null))?p:null;
+  }).catch(()=>null);
+}
+
+function TT({active,payload,label}){
+  if(!active||!payload?.length)return null;
+  return React.createElement("div",{style:{background:"#1e293b",border:"1px solid #334155",borderRadius:10,padding:"10px 14px",fontSize:12,maxWidth:190}},
+    React.createElement("p",{style:{color:"#94a3b8",margin:"0 0 4px",fontWeight:700}},label),
+    payload.filter(p=>p.value!=null).map((p,i)=>
+      React.createElement("p",{key:i,style:{color:p.color||"#f1f5f9",margin:"2px 0"}},p.name+": ",React.createElement("strong",null,(typeof p.value==="number"?p.value.toFixed(1):p.value)+"°"))
+    )
+  );
+}
+
+function LeafletMap({sites,selected,onSelect,siteData}){
+  const mapRef=useRef(null),leafletMap=useRef(null),markers=useRef({});
+  const tempColor=t=>t==null?"#64748b":t<5?"#60a5fa":t<10?"#22c55e":t<15?"#facc15":"#f97316";
+  const makeIcon=(temp,isSel)=>{
+    const col=tempColor(temp),label=temp!=null?temp.toFixed(1)+"°":"?",size=isSel?44:36;
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-2}" fill="${col}" stroke="${isSel?"#fff":"#1e293b"}" stroke-width="${isSel?3:1.5}"/><text x="${size/2}" y="${size/2+4}" text-anchor="middle" font-size="${isSel?11:9}" font-weight="700" font-family="system-ui" fill="#fff">${label}</text></svg>`;
+    return L.divIcon({html:svg,className:"",iconSize:[size,size],iconAnchor:[size/2,size/2]});
+  };
+  useEffect(()=>{
+    if(leafletMap.current||!mapRef.current)return;
+    const map=L.map(mapRef.current,{center:[60.19,24.98],zoom:11});
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap",maxZoom:18}).addTo(map);
+    leafletMap.current=map;
+    sites.forEach(s=>{
+      const d=siteData[s.id],temp=d?.obs?.slice(-1)[0]?.w??d?.latestTemp;
+      const m=L.marker([s.lat,s.lon],{icon:makeIcon(temp,s.id===selected?.id)}).addTo(map).on("click",()=>onSelect(s));
+      m.bindTooltip(s.name,{permanent:false,direction:"top"});
+      markers.current[s.id]={marker:m};
+    });
+  },[]);
+  useEffect(()=>{
+    if(!leafletMap.current)return;
+    sites.forEach(s=>{
+      const e=markers.current[s.id];if(!e)return;
+      const d=siteData[s.id],temp=d?.obs?.slice(-1)[0]?.w??d?.latestTemp;
+      e.marker.setIcon(makeIcon(temp,s.id===selected?.id));
+    });
+    if(selected)leafletMap.current.panTo([selected.lat,selected.lon],{animate:true});
+  },[selected,siteData]);
+  return React.createElement("div",{style:{borderRadius:14,overflow:"hidden",border:"1px solid #1e3a4a",marginBottom:16}},
+    React.createElement("div",{ref:mapRef,style:{height:280,width:"100%"}}),
+    React.createElement("div",{style:{background:"#0d1f2d",padding:"6px 12px",borderTop:"1px solid #1e3a4a",display:"flex",gap:12,flexWrap:"wrap"}},
+      [["#60a5fa","<5°C"],["#22c55e","5-10°C"],["#facc15","10-15°C"],["#f97316",">15°C"],["#64748b","ei dataa"]].map(([c,l])=>
+        React.createElement("span",{key:l,style:{fontSize:11,color:"#94a3b8",display:"flex",alignItems:"center",gap:4}},
+          React.createElement("span",{style:{width:10,height:10,borderRadius:"50%",background:c,display:"inline-block"}}),l)
+      )
+    )
+  );
+}
+
+function App(){
+  const today=new Date().toISOString().slice(0,10);
+  const [selected,setSelected]=useState(SITES[0]);
+  const [siteData,setSiteData]=useState({});
+  const [pasteMode,setPasteMode]=useState(false);
+  const [pasteText,setPasteText]=useState("");
+  const [pasteError,setPasteError]=useState("");
+  const [weather,setWeather]=useState(null);
+  const [wxPasteMode,setWxPasteMode]=useState(false);
+  const [wxPasteText,setWxPasteText]=useState("");
+  const [wxPasteErr,setWxPasteErr]=useState("");
+  const [view,setView]=useState("map");
+  const [chartData,setChartData]=useState([]);
+  const [loading,setLoading]=useState({});
+
+  useEffect(()=>{
+    fetch(PROXY+"/weather").then(r=>r.json()).then(j=>{const wx=parseWeatherJSON(j);if(wx)setWeather(wx);}).catch(()=>{});
+    fetchSiteData("70B3D570500114C7").then(p=>{if(p)setSiteData(prev=>({...prev,"70B3D570500114C7":p}));});
+  },[]);
+
+  const siteDataRef=useRef(siteData);
+  useEffect(()=>{siteDataRef.current=siteData;},[siteData]);
+
+  const handleSelect=useCallback((s)=>{
+    setSelected(s);setPasteMode(false);
+    if(!siteDataRef.current[s.id]){
+      setLoading(prev=>({...prev,[s.id]:true}));
+      fetchSiteData(s.id).then(p=>{
+        if(p)setSiteData(prev=>({...prev,[s.id]:p}));
+        setLoading(prev=>({...prev,[s.id]:false}));
+      });
+    }
+  },[]);
+
+  const handleRefresh=useCallback(()=>{
+    const id=selected.id;
+    setLoading(prev=>({...prev,[id]:true}));
+    fetchSiteData(id).then(p=>{
+      if(p)setSiteData(prev=>({...prev,[id]:p}));
+      setLoading(prev=>({...prev,[id]:false}));
+    });
+  },[selected.id]);
+
+  const handlePaste=()=>{
+    try{
+      const json=JSON.parse(pasteText);
+      const parsed=parseGeoJSON(json);
+      if(!parsed||(parsed.obs.length===0&&parsed.latestTemp==null)){setPasteError("Virheellinen data.");return;}
+      setSiteData(prev=>({...prev,[selected.id]:parsed}));
+      setPasteMode(false);setPasteText("");setPasteError("");
+    }catch(e){setPasteError("Virheellinen JSON.");}
+  };
+
+  const handleWxPaste=()=>{
+    try{
+      const j=JSON.parse(wxPasteText.replace(/```json|```/g,"").trim());
+      const wx=parseWeatherJSON(j);
+      if(!wx){setWxPasteErr("Virheellinen JSON.");return;}
+      setWeather(wx);setWxPasteMode(false);setWxPasteText("");setWxPasteErr("");
+    }catch(e){setWxPasteErr("Virheellinen JSON.");}
+  };
+
+  const data=siteData[selected.id];
+  const last10=data?data.obs.filter(d=>d.t<=today).slice(-10).map(d=>({date:d.t,label:d.t.slice(5),obs:d.w})):[];
+  const forecast=data?buildForecast(data.obs,weather||[],today):[];
+  const forecastStrip=forecast.slice(0,14);
+  const latestT=data?.obs?.filter(d=>d.t<=today).slice(-1)[0]?.w??data?.latestTemp;
+  const fc7=forecast[6],fc14=forecast[13];
+  const swimmable=forecast.findIndex(f=>f.forecast>=15);
+  const todayWx=(weather||[]).find(w=>w.date===today);
+  const isLoading=loading[selected.id];
+
+  useEffect(()=>{
+    if(!data)return;
+    const fc=forecast;
+    const dates=new Set([...last10.map(d=>d.date),...fc.map(d=>d.date)]);
+    setChartData([...dates].sort().map(date=>{
+      const row={date,label:date.slice(5)};
+      const o=last10.find(d=>d.date===date);if(o)row.obs=o.obs;
+      const f=fc.find(d=>d.date===date);
+      if(f){row.forecast=f.forecast;row.climNorm=f.climNorm;row.rajAvg=f.rajAvg;}
+      return row;
+    }));
+  },[siteData,selected,weather]);
+
+  const h=React.createElement;
+  const btn=(label,onClick,style={})=>h("button",{onClick,style:{border:"1px solid #334155",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:13,...style}},label);
+
+  return h("div",{style:{background:"#0f172a",minHeight:"100vh",color:"#f1f5f9",fontFamily:"system-ui,sans-serif"}},
+    h("div",{style:{background:"#0d1f2d",borderBottom:"1px solid #1e3a4a",padding:"14px 20px",display:"flex",alignItems:"center",gap:12}},
+      h("span",{style:{fontSize:22}},"🏊"),
+      h("div",null,
+        h("h1",{style:{margin:0,fontSize:18,fontWeight:800}},"Uiras Helsinki"),
+        h("p",{style:{margin:0,fontSize:11,color:"#64748b"}},"Uimavesien lämpötilaseuranta · bri3.fvh.io + Open-Meteo")
+      )
+    ),
+    h("div",{style:{maxWidth:900,margin:"0 auto",padding:16}},
+
+      h("div",{style:{marginBottom:12,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}},
+        h("span",{style:{color:"#64748b",fontSize:12}},"Säädata: "+(weather?weather[0]?.date+" – "+weather[weather.length-1]?.date:"ladataan...")),
+        btn("🌤 Päivitä säädata",()=>setWxPasteMode(p=>!p),{background:"#1e293b",color:"#60a5fa"})
+      ),
+
+      wxPasteMode&&h("div",{style:{background:"#1e293b",borderRadius:12,padding:14,marginBottom:14,border:"1px solid #334155"}},
+        h("p",{style:{color:"#94a3b8",fontSize:12,marginBottom:6}},"Avaa selaimessa ja kopioi kaikki:"),
+        h("code",{style:{color:"#60a5fa",fontSize:10,wordBreak:"break-all",display:"block",marginBottom:8}},
+          "https://api.open-meteo.com/v1/forecast?latitude=60.1756&longitude=24.9439&daily=temperature_2m_max,temperature_2m_min,windspeed_10m_max,winddirection_10m_dominant,sunshine_duration,shortwave_radiation_sum&forecast_days=14&timezone=Europe%2FHelsinki"
+        ),
+        h("textarea",{value:wxPasteText,onChange:e=>setWxPasteText(e.target.value),placeholder:"Liitä JSON tähän...",rows:3,style:{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:8,color:"#f1f5f9",padding:8,fontSize:11,fontFamily:"monospace"}}),
+        wxPasteErr&&h("p",{style:{color:"#f87171",fontSize:12,marginTop:4}},wxPasteErr),
+        h("div",{style:{display:"flex",gap:8,marginTop:8}},
+          btn("Lataa",handleWxPaste,{background:"#3b82f6",color:"#fff",border:"none",fontWeight:700}),
+          btn("Peruuta",()=>{setWxPasteMode(false);setWxPasteText("");setWxPasteErr("");},{background:"#1e293b",color:"#94a3b8"})
+        )
+      ),
+
+      h("div",{style:{display:"flex",gap:8,marginBottom:12}},
+        ["map","list"].map(v=>btn(v==="map"?"🗺️ Kartta":"📋 Lista",()=>setView(v),{background:view===v?"#1e3a4a":"#1e293b",color:view===v?"#60a5fa":"#64748b",fontWeight:view===v?700:400}))
+      ),
+
+      view==="map"&&h(LeafletMap,{sites:SITES,selected,onSelect:handleSelect,siteData}),
+      view==="list"&&h("div",{style:{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}},
+        SITES.map(s=>{
+          const d=siteData[s.id],temp=d?.obs?.slice(-1)[0]?.w??d?.latestTemp,active=s.id===selected.id;
+          return btn(s.name+(temp!=null?" "+temp.toFixed(1)+"°":" –"),()=>handleSelect(s),{background:active?"#1e3a4a":"#1e293b",color:active?"#60a5fa":"#64748b",fontWeight:active?700:400,marginBottom:4});
+        })
+      ),
+
+      h("div",{style:{background:"#0d1f2d",borderRadius:14,border:"1px solid #1e3a4a",padding:16,marginBottom:16}},
+        h("div",{style:{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:12}},
+          h("div",null,
+            h("h2",{style:{margin:"0 0 2px",fontSize:18,fontWeight:800}},selected.name),
+            h("p",{style:{margin:0,fontSize:11,color:"#475569"}},selected.lat.toFixed(4)+"°N "+selected.lon.toFixed(4)+"°E")
+          ),
+          h("div",{style:{display:"flex",gap:8}},
+            btn(isLoading?"⏳ Ladataan...":"🌊 Päivitä vesidata",handleRefresh,{background:"#1e293b",color:"#60a5fa",opacity:isLoading?0.5:1}),
+            btn("📋 Manuaalinen",()=>setPasteMode(p=>!p),{background:"#1e293b",color:"#64748b"})
+          )
+        ),
+
+        pasteMode&&h("div",{style:{marginBottom:12}},
+          h("p",{style:{color:"#94a3b8",fontSize:12,marginBottom:6}},"Avaa bri3.fvh.io/opendata/uiras/"+selected.id+".geojson, kopioi kaikki ja liitä alle."),
+          h("textarea",{value:pasteText,onChange:e=>setPasteText(e.target.value),placeholder:"Liitä JSON...",rows:4,style:{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:8,color:"#f1f5f9",padding:10,fontSize:12,fontFamily:"monospace"}}),
+          pasteError&&h("p",{style:{color:"#f87171",fontSize:12,marginTop:4}},pasteError),
+          h("div",{style:{display:"flex",gap:8,marginTop:8}},
+            btn("Lataa",handlePaste,{background:"#3b82f6",color:"#fff",border:"none",fontWeight:700}),
+            btn("Peruuta",()=>{setPasteMode(false);setPasteError("");setPasteText("");},{background:"#1e293b",color:"#94a3b8"})
+          )
+        ),
+
+        !data&&!isLoading&&h("div",{style:{background:"#1e293b",borderRadius:10,padding:16,textAlign:"center"}},
+          h("p",{style:{color:"#94a3b8"}},"Ei dataa — klikkaa \"Päivitä vesidata\"")
+        ),
+
+        isLoading&&h("div",{style:{textAlign:"center",padding:"30px 0",color:"#64748b"}},h("p",null,"⏳ Haetaan dataa...")),
+
+        data&&!isLoading&&h("div",null,
+          h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:10,marginBottom:16}},
+            [
+              {label:"Vesi nyt",     val:latestT!=null?latestT.toFixed(1)+" °C":"–",        sub:data.latestTime||today,                    col:"#3b82f6"},
+              {label:"Ilma tänään",  val:todayWx?todayWx.air.toFixed(1)+" °C":"–",          sub:"Open-Meteo",                              col:"#f97316"},
+              {label:"Tuuli",        val:todayWx?todayWx.wind.toFixed(1)+" m/s":"–",         sub:todayWx?windDirLabel(todayWx.windDir)+" tuuli":"–",col:"#a78bfa"},
+              {label:"+7 vrk vesi",  val:fc7?fc7.forecast.toFixed(1)+" °C":"–",             sub:"ennuste",                                 col:"#22c55e"},
+              {label:"+14 vrk vesi", val:fc14?fc14.forecast.toFixed(1)+" °C":"–",           sub:"ennuste",                                 col:"#22c55e"},
+              {label:"Uimakelp.",    val:swimmable>=0?"~"+swimmable+" pv":"ei pian",         sub:"≥15 °C",                                  col:swimmable>=0&&swimmable<30?"#facc15":"#64748b"},
+            ].map((c,i)=>h("div",{key:i,style:{background:"#1e293b",borderRadius:10,padding:"10px 12px",borderTop:"3px solid "+c.col}},
+              h("p",{style:{color:"#64748b",fontSize:10,margin:"0 0 3px",textTransform:"uppercase",letterSpacing:0.5}},c.label),
+              h("p",{style:{color:c.col,fontSize:17,fontWeight:800,margin:"0 0 2px"}},c.val),
+              h("p",{style:{color:"#475569",fontSize:10}},c.sub)
+            ))
+          ),
+
+          h("div",{style:{background:"#0f172a",borderRadius:12,padding:"16px 8px 8px",marginBottom:12}},
+            h("p",{style:{color:"#94a3b8",fontSize:12,fontWeight:600,margin:"0 0 2px 8px"}},"Viimeiset 10 pv + 61 vrk ennuste"),
+            h("p",{style:{color:"#475569",fontSize:10,margin:"0 0 10px 8px"}},"🔵 Mitattu · 🟠 Ennuste · 🩵 Rajasaari 2024-25 · 🟣 Normaali 1991-2020"),
+            h(ResponsiveContainer,{width:"100%",height:280},
+              h(ComposedChart,{data:chartData,margin:{top:5,right:16,left:0,bottom:5}},
+                h(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1e293b"}),
+                h(XAxis,{dataKey:"label",tick:{fill:"#64748b",fontSize:10},interval:Math.max(1,Math.floor(chartData.length/12))}),
+                h(YAxis,{tick:{fill:"#64748b",fontSize:11},tickFormatter:v=>v+"°",domain:[0,"auto"]}),
+                h(Tooltip,{content:h(TT,null)}),
+                h(ReferenceLine,{x:today.slice(5),stroke:"#facc15",strokeDasharray:"4 2",label:{value:"tänään",fill:"#facc15",fontSize:9,position:"insideTopLeft"}}),
+                h(ReferenceLine,{y:15,stroke:"#22c55e",strokeDasharray:"3 3",strokeOpacity:0.5,label:{value:"uimaraja",fill:"#22c55e",fontSize:9,position:"insideTopRight"}}),
+                h(Line,{dataKey:"rajAvg",stroke:"#06b6d4",strokeWidth:1.5,strokeDasharray:"4 2",dot:false,name:"Rajasaari 24-25",connectNulls:true}),
+                h(Line,{dataKey:"climNorm",stroke:"#a78bfa",strokeWidth:1.5,strokeDasharray:"4 2",dot:false,name:"Normaali 1991-2020",connectNulls:true}),
+                h(Line,{dataKey:"obs",stroke:"#3b82f6",strokeWidth:2.5,dot:{r:3,fill:"#3b82f6"},name:"Mitattu",connectNulls:true}),
+                h(Line,{dataKey:"forecast",stroke:"#f97316",strokeWidth:2,dot:false,name:"Ennuste",strokeDasharray:"5 4",connectNulls:true})
+              )
+            )
+          ),
+
+          forecastStrip.length>0&&h("div",{style:{overflowX:"auto"}},
+            h("p",{style:{color:"#64748b",fontSize:10,margin:"0 0 6px"}},"Sääkaistale 14 pv — ilma = vrk keskiarvo"),
+            h("div",{style:{display:"flex",gap:6,minWidth:"max-content"}},
+              forecastStrip.map((f,i)=>{
+                const wCol=f.windEff>0.1?"#22c55e":f.windEff<-0.1?"#f87171":"#94a3b8";
+                return h("div",{key:i,style:{background:"#1e293b",borderRadius:8,padding:"8px 10px",textAlign:"center",minWidth:62}},
+                  h("p",{style:{color:"#64748b",fontSize:9,margin:"0 0 3px"}},f.label),
+                  h("p",{style:{color:"#f97316",fontSize:15,fontWeight:700,margin:"0 0 3px"}},f.forecast+"°"),
+                  f.airTemp!=null&&h("p",{style:{color:"#94a3b8",fontSize:9,margin:"0 0 2px"}},"🌡 "+f.airTemp.toFixed(1)+"°"),
+                  f.sunshine!=null&&h("p",{style:{color:"#facc15",fontSize:9,margin:"0 0 2px"}},"☀ "+f.sunshine.toFixed(0)+"h"),
+                  f.wind!=null&&h("p",{style:{color:wCol,fontSize:9,margin:0}},"💨 "+windDirLabel(f.windDir)+" "+f.wind.toFixed(1)+" m/s")
+                );
+              })
+            ),
+            h("p",{style:{color:"#475569",fontSize:10,margin:"6px 0 0"}},"💨 Tuulen väri: 🟢 lämmin suunta · 🔴 kylmä (upwelling)")
+          )
+        )
+      ),
+
+      h("p",{style:{color:"#334155",fontSize:11,textAlign:"center"}},"Uiras: bri3.fvh.io · Sää: Open-Meteo · Kausiodotus: Rajasaari 2024-25 + IL normaali 1991-2020")
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
