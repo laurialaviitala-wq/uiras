@@ -19,6 +19,7 @@
 <div id="root"></div>
 <script>
 const {useState,useEffect,useRef,useCallback} = React;
+const h = React.createElement;
 
 function WaterChart({chartData, today}) {
   const canvasRef = useRef(null);
@@ -352,7 +353,6 @@ function App(){
     }));
   },[siteData,selected,weather]);
 
-  const h=React.createElement;
   const btn=(label,onClick,style={})=>h("button",{onClick,style:{border:"1px solid #334155",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:13,...style}},label);
 
   return h("div",{style:{background:"#0f172a",minHeight:"100vh",color:"#f1f5f9",fontFamily:"system-ui,sans-serif"}},
